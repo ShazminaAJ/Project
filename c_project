@@ -1,0 +1,177 @@
+#include<stdio.h>
+#include<string.h>
+#include<stdlib.h>
+#include<ctype.h>
+struct Account
+{
+    int acno;
+    char name[30];
+    char pwd[16];
+    double balance;
+};
+struct Account *accs;
+int total=0;
+int capacity=0;
+void expand()
+{
+    if(capacity==0)
+    {
+        capacity=10;
+        accs=(struct Account *)malloc(capacity * sizeof(struct Account));
+    }
+    else
+    {
+        capacity*=2;
+        accs=(struct Account *)realloc(accs, capacity * sizeof(struct Account));
+    }
+}
+void createAcc()
+{
+    if(total>=capacity)
+    {
+        expand();
+    }
+    printf("Enter your name: ");
+    scanf(" %[^\n]", accs[total].name);
+    printf("Create Your Password: ");
+    scanf("%s", accs[total].pwd);
+    accs[total].acno=10000+total;
+    printf("Account created successfully!\nYour Account Number is: %d\n", accs[total].acno);
+    accs[total].balance=0;
+    total++;
+}
+int login()
+{
+    int accno;
+    char pswd[16];
+    printf("Enter Your Account Number: ");
+    scanf("%d", &accno);
+    printf("Enter Your Password: ");
+    scanf("%s", &pswd);
+    for(int i=0; i<total; i++)
+    {
+        if(accs[i].acno == accno && strcmp(accs[i].pwd, pswd)==0)
+        {
+            printf("Login successful! Welcome, %s\n", accs[i].name);
+            return i;
+        }
+    }
+    printf("Invalid Login Credentials! Try Again.\n");
+    return -1;
+}
+void deposit(int l)
+{
+    double amt;
+    printf("Enter the amount to deposit: ");
+    scanf("%lf", &amt);
+    if(amt>0)
+    {
+        accs[l].balance+=amt;
+        printf("Amount deposited successfully! Updated Balance: %.2lf\n", accs[l].balance);
+    }
+    else
+    {
+        printf("Invalid amount!\n");
+    }
+}
+void withdraw(int l)
+{
+    double amt;
+    printf("Enter the amount to withdraw: ");
+    scanf("%lf", &amt);
+    if(amt>0 && amt<=accs[l].balance)
+    {
+        accs[l].balance-=amt;
+        printf("Amount withdrawn successfully! Updated Balance: %.2lf\n", accs[l].balance);
+    }
+    else
+    {
+        printf("Insufficient balance or invalid amount!\n");
+    }
+}
+void transfer(int l)
+{
+    int taccno, f=0;
+    double amt;
+    printf("Enter the target Account Number: ");
+    scanf("%d", &taccno);
+    printf("Enter amount to transfer: ");
+    scanf("%lf", &amt);
+    if (amt <= 0 || accs[l].balance < amt)
+    {
+        printf("Invalid amount or insufficient balance!\n");
+        return;
+    }
+    for (int i = 0; i < total; i++)
+    {
+        if (accs[i].acno == taccno && i != l)
+        {
+            accs[l].balance -= amt;
+            accs[i].balance += amt;
+            printf("Amount transferred successfully! Your Updated Balance: %.2lf\n", accs[l].balance);
+            f = 1;
+            break;
+        }
+    }
+    if (!f)
+        printf("Target account not found!\n");
+}
+void balance(int l)
+{
+    printf("Your Current Balance: %.2lf\n", accs[l].balance);
+}
+int main()
+{
+    int ch, l=-1;
+    while(1)
+    {
+        printf("\n===== BANK MANAGEMENT SYSTEM =====\n");
+        if(l==-1)
+        {
+            printf("1. Create Account\n2. Login\n3. Exit\n");
+            printf("Enter your choice: ");
+            scanf("%d", &ch);
+            switch(ch)
+            {
+                case 1:
+                    createAcc();
+                    break;
+                case 2:
+                    l=login();
+                    break;
+                case 3:
+                    free(accs);
+                    exit(0);
+                default:
+                    printf("Invalid! Try Again!!\n");
+            }
+        }
+        else
+        {
+            printf("1. Deposit Money\n2. Withdraw Money\n3. Transfer Money\n4. Check Balance\n5. Logout\n");
+            printf("Enter your choice: ");
+            scanf("%d", &ch);
+            switch(ch)
+            {
+                case 1:
+                    deposit(l);
+                    break;
+                case 2:
+                    withdraw(l);
+                    break;
+                case 3:
+                    transfer(l);
+                    break;
+                case 4:
+                    balance(l);
+                    break;
+                case 5:
+                    l=-1;
+                    printf("Logged Out Successfully!\n");
+                    break;
+                default:
+                    printf("Invalid! Try Again!!\n");
+            }
+        }
+    }
+}
