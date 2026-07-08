@@ -1,0 +1,376 @@
+import tkinter as tk
+from tkinter import messagebox
+import mysql.connector
+import string
+import hashlib
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Connect to MySQL
+conn = mysql.connector.connect(
+    host="localhost",
+    user="root",         
+    password="Shazmina22",     
+    database="portfoliodb"
+)
+cursor = conn.cursor()
+
+# Color Scheme
+BG_COLOR = "#1874CD"
+TEXT_COLOR = "black"  
+HEADER_COLOR = "black"  # very dark gray for headings
+BUTTON_COLOR = "#104E8B"  # Sky Blue
+
+# Utility Functions
+def is_strong_password(password):
+    return (len(password) >= 8 and
+            any(c.isupper() for c in password) and
+            any(c.islower() for c in password) and
+            any(c.isdigit() for c in password) and
+            any(c in string.punctuation for c in password))
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def create_button(parent, text, command, width=20):
+    return tk.Button(parent, 
+                   text=text, 
+                   command=command,
+                   width=width,
+                   bg=BUTTON_COLOR,
+                   fg=TEXT_COLOR,
+                   activebackground="#b0e0e6",
+                   relief=tk.RAISED,
+                   borderwidth=2,
+                   font=("Arial", 10))
+
+# ------- Editor Functions -----------
+def open_field_editor(root, user_id, field_name):
+    win = tk.Toplevel(root)
+    win.title(f"Edit {field_name}")
+    win.configure(bg=BG_COLOR)
+    
+    tk.Label(win, text=f"Edit {field_name}", font=("Arial", 14, "bold"), bg=BG_COLOR, fg=HEADER_COLOR).pack(pady=(20, 5))
+    
+    text_frame = tk.Frame(win, bg=BG_COLOR)
+    text_frame.pack(padx=20, pady=10)
+    
+    text_box = tk.Text(text_frame, height=10, width=50, font=("Arial", 10), bg="white", fg="black")
+    text_box.pack(side=tk.LEFT, padx=(0, 5))
+    
+    scrollbar = tk.Scrollbar(text_frame, command=text_box.yview)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    text_box.config(yscrollcommand=scrollbar.set)
+    
+    # Load existing content
+    cursor.execute(f"SELECT {field_name.lower()} FROM Portfolio WHERE user_id = %s", (user_id,))
+    result = cursor.fetchone()
+    if result and result[0]:
+        text_box.insert(tk.END, result[0])
+
+    button_frame = tk.Frame(win, bg=BG_COLOR)
+    button_frame.pack(pady=10)
+    
+    def save_field():
+        content = text_box.get("1.0", tk.END).strip()
+        cursor.execute(f"SELECT user_id FROM Portfolio WHERE user_id = %s", (user_id,))
+        exists = cursor.fetchone()
+        if exists:
+            cursor.execute(f"UPDATE Portfolio SET {field_name.lower()} = %s WHERE user_id = %s", (content, user_id))
+        else:
+            cursor.execute(f"INSERT INTO Portfolio (user_id, {field_name.lower()}) VALUES (%s, %s)", (user_id, content))
+        conn.commit()
+        messagebox.showinfo("Saved", f"{field_name} updated successfully!")
+        win.destroy()
+
+    create_button(button_frame, "Save", save_field).pack(side=tk.LEFT, padx=10)
+    create_button(button_frame, "Cancel", win.destroy).pack(side=tk.LEFT, padx=10)
+
+def open_crud_editor(root, user_id, table_name, field_name):
+    win = tk.Toplevel(root)
+    win.title(f"Manage {field_name.capitalize()}")
+    win.configure(bg=BG_COLOR)
+    
+    main_frame = tk.Frame(win, bg=BG_COLOR)
+    main_frame.pack(padx=20, pady=10)
+    
+    tk.Label(main_frame, text=f"Manage {field_name.capitalize()}", 
+            font=("Arial", 14, "bold"), bg=BG_COLOR, fg=HEADER_COLOR).grid(row=0, column=0, columnspan=2, pady=10)
+    
+    # Entry Frame
+    entry_frame = tk.Frame(main_frame, bg=BG_COLOR)
+    entry_frame.grid(row=1, column=0, columnspan=2, pady=10)
+    
+    tk.Label(entry_frame, text="Year:", bg=BG_COLOR, fg=TEXT_COLOR).grid(row=0, column=0, sticky="e", padx=5, pady=5)
+    year_entry = tk.Entry(entry_frame, font=("Arial", 10), fg="black")
+    year_entry.grid(row=0, column=1, padx=5, pady=5)
+    
+    tk.Label(entry_frame, text=f"{field_name.capitalize()}:", bg=BG_COLOR, fg=TEXT_COLOR).grid(row=1, column=0, sticky="e", padx=5, pady=5)
+    field_entry = tk.Entry(entry_frame, font=("Arial", 10), fg="black")
+    field_entry.grid(row=1, column=1, padx=5, pady=5)
+    
+    # Button Frame
+    button_frame = tk.Frame(main_frame, bg=BG_COLOR)
+    button_frame.grid(row=2, column=0, columnspan=2, pady=10)
+    
+    create_button(button_frame, f"Add {field_name.capitalize()}", add_entry, width=15).grid(row=0, column=0, padx=5, pady=5)
+    create_button(button_frame, "Update Selected", update_selected, width=15).grid(row=0, column=1, padx=5, pady=5)
+    create_button(button_frame, "Delete Selected", delete_selected, width=15).grid(row=1, column=0, padx=5, pady=5)
+    create_button(button_frame, "Show Graph", show_graph, width=15).grid(row=1, column=1, padx=5, pady=5)
+    
+    # Listbox Frame with Scrollbar
+    list_frame = tk.Frame(main_frame)
+    list_frame.grid(row=3, column=0, columnspan=2, pady=10)
+    
+    scrollbar = tk.Scrollbar(list_frame)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    
+    listbox = tk.Listbox(list_frame, width=60, height=10, font=("Arial", 10), fg="black")
+    listbox.pack(side=tk.LEFT, fill=tk.BOTH)
+    
+    scrollbar.config(command=listbox.yview)
+    
+    def refresh_list():
+        listbox.delete(0, tk.END)
+        cursor.execute(f"SELECT id, year, {field_name} FROM {table_name} WHERE user_id = %s", (user_id,))
+        for row in cursor.fetchall():
+            listbox.insert(tk.END, f"{row[0]} - {row[1]}: {row[2]}")
+
+    def add_entry():
+        year = year_entry.get()
+        value = field_entry.get()
+        if year.isdigit() and value:
+            cursor.execute(f"INSERT INTO {table_name} (user_id, year, {field_name}) VALUES (%s, %s, %s)", (user_id, int(year), value))
+            conn.commit()
+            refresh_list()
+            year_entry.delete(0, tk.END)
+            field_entry.delete(0, tk.END)
+        else:
+            messagebox.showwarning("Input Error", f"Please enter a valid year and {field_name}.")
+
+    def delete_selected():
+        selection = listbox.curselection()
+        if selection:
+            item_text = listbox.get(selection[0])
+            entry_id = int(item_text.split(" - ")[0])
+            if messagebox.askyesno("Confirm Delete", "Do you want to delete this entry?"):
+                cursor.execute(f"DELETE FROM {table_name} WHERE id = %s", (entry_id,))
+                conn.commit()
+                refresh_list()
+
+    def update_selected():
+        selection = listbox.curselection()
+        if selection:
+            item_text = listbox.get(selection[0])
+            entry_id = int(item_text.split(" - ")[0])
+            new_year = year_entry.get()
+            new_value = field_entry.get()
+            if messagebox.askyesno("Confirm Update", "Do you want to update this entry?"):
+                if new_year.isdigit() and new_value:
+                    cursor.execute(f"UPDATE {table_name} SET year = %s, {field_name} = %s WHERE id = %s", (int(new_year), new_value, entry_id))
+                    conn.commit()
+                    refresh_list()
+                    year_entry.delete(0, tk.END)
+                    field_entry.delete(0, tk.END)
+                else:
+                    messagebox.showwarning("Input Error", f"Please enter a valid year and {field_name}.")
+
+    def show_graph():
+        cursor.execute(f"SELECT year FROM {table_name} WHERE user_id = %s", (user_id,))
+        years = [row[0] for row in cursor.fetchall()]
+        if not years:
+            messagebox.showinfo("No Data", f"No {field_name} data to show.")
+            return
+        df = pd.DataFrame(years, columns=["Year"])
+        year_counts = df["Year"].value_counts().sort_index()
+        plt.figure(figsize=(6,4))
+        year_counts.plot(kind='bar', title=f"{field_name.capitalize()} per Year", xlabel="Year", ylabel=f"Number of {field_name.capitalize()}")
+        plt.tight_layout()
+        plt.show()
+
+    refresh_list()
+
+def open_skills_editor(root, user_id):
+    open_crud_editor(root, user_id, "Skills", "skill")
+
+def open_projects_editor(root, user_id):
+    open_crud_editor(root, user_id, "Projects", "project")
+
+def open_achievements_editor(root, user_id):
+    open_crud_editor(root, user_id, "Achievements", "achievement")
+
+
+def show_progress(root, user_id):
+    win = tk.Toplevel(root)
+    win.title("Portfolio Progress")
+
+    fields = ["objective", "contact", "projects", "achievements"]
+    progress_values = {}
+
+    for field in fields:
+        cursor.execute(f"SELECT {field} FROM Portfolio WHERE user_id = %s", (user_id,))
+        result = cursor.fetchone()
+        content = result[0] if result and result[0] else ""
+        # Progress = percentage of content length wrt a threshold (e.g. 200 chars)
+        progress = min(len(content) / 200 * 100, 100)
+        progress_values[field] = progress
+
+    # For skills count
+    cursor.execute("SELECT COUNT(*) FROM Skills WHERE user_id = %s", (user_id,))
+    skills_count = cursor.fetchone()[0]
+    skills_progress = min(skills_count / 10 * 100, 100)  # assuming 10 skills max for 100%
+
+    progress_values["skills"] = skills_progress
+
+    # Display progress bars
+    for idx, (field, val) in enumerate(progress_values.items()):
+        tk.Label(win, text=f"{field.capitalize()} Progress: {val:.1f}%", bg=BG_COLOR, fg=TEXT_COLOR).grid(row=idx, column=0, sticky="w", padx=10, pady=5)
+        canvas = tk.Canvas(win, width=200, height=20, bg='white')
+        canvas.grid(row=idx, column=1, padx=10, pady=5)
+        canvas.create_rectangle(0, 0, 2 * val, 20, fill='green')
+
+# ---------------------- Class ----------------------------
+
+class LoginApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Portfolio Management System")
+        self.root.geometry("400x550")
+        self.init_main_screen()
+
+    def clear_screen(self):
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+    def init_main_screen(self):
+        self.clear_screen()
+        tk.Label(self.root, text="Welcome!", font=("Arial", 20), bg=BG_COLOR, fg=TEXT_COLOR).pack(pady=20)
+        tk.Button(self.root, text="Login", command=self.login_screen, width=20, bg=BUTTON_COLOR, fg="white").pack(pady=10)
+        tk.Button(self.root, text="Sign Up", command=self.signup_screen, width=20, bg=BUTTON_COLOR, fg="white").pack(pady=10)
+
+    def signup_screen(self):
+        self.clear_screen()
+        tk.Label(self.root, text="Sign Up", font=("Arial", 20), bg=BG_COLOR, fg=TEXT_COLOR).pack(pady=10)
+
+        tk.Label(self.root, text="Username", bg=BG_COLOR, fg=TEXT_COLOR).pack(pady=(5, 0))
+        self.signup_user = tk.Entry(self.root, fg="black")
+        self.signup_user.pack(pady=(0, 10))
+
+        tk.Label(self.root, text="Password", bg=BG_COLOR, fg=TEXT_COLOR).pack(pady=(5, 0))
+        self.signup_pass = tk.Entry(self.root, show="*", fg="black")
+        self.signup_pass.pack(pady=(0, 10))
+
+        tk.Label(self.root, text="Verify Password", bg=BG_COLOR, fg=TEXT_COLOR).pack(pady=(5, 0))
+        self.verify_pass = tk.Entry(self.root, show="*", fg="black")
+        self.verify_pass.pack(pady=(0, 10))
+
+        self.pass_visible = False
+        self.eye_button = tk.Button(self.root, text="👁", command=self.toggle_password_visibility, bg=BUTTON_COLOR, fg="white")
+        self.eye_button.pack(pady=(5, 10))
+
+        tk.Button(self.root, text="Create Account", command=self.signup_user_func, bg=BUTTON_COLOR, fg="white").pack(pady=5)
+        tk.Button(self.root, text="Clear All", command=self.clear_signup_fields, bg=BUTTON_COLOR, fg="white").pack(pady=5)
+        tk.Button(self.root, text="Back", command=self.init_main_screen, bg=BUTTON_COLOR, fg="white").pack(pady=10)
+
+    def toggle_password_visibility(self):
+        self.pass_visible = not self.pass_visible
+        show = "" if self.pass_visible else "*"
+        self.signup_pass.config(show=show)
+        self.verify_pass.config(show=show)
+        self.eye_button.config(text="🙈" if self.pass_visible else "👁")
+
+    def clear_signup_fields(self):
+        self.signup_user.delete(0, tk.END)
+        self.signup_pass.delete(0, tk.END)
+        self.verify_pass.delete(0, tk.END)
+
+    def signup_user_func(self):
+        user = self.signup_user.get()
+        pwd = self.signup_pass.get()
+        verify = self.verify_pass.get()
+
+        if pwd != verify:
+            messagebox.showerror("Error", "Passwords do not match.")
+            return
+
+        if not is_strong_password(pwd):
+            messagebox.showwarning("Weak Password", "Password must be 8+ chars with upper, lower, digit, and symbol.")
+            return
+
+        cursor.execute("SELECT * FROM Users WHERE username = %s", (user,))
+        if cursor.fetchone():
+            messagebox.showerror("Error", "Username already exists.")
+            return
+
+        hashed_pwd = hash_password(pwd)
+        cursor.execute("INSERT INTO Users (username, password) VALUES (%s, %s)", (user, hashed_pwd))
+        conn.commit()
+        messagebox.showinfo("Success", "Account created successfully!")
+        self.init_main_screen()
+
+    def login_screen(self):
+        self.clear_screen()
+        tk.Label(self.root, text="Login", font=("Arial", 16), bg=BG_COLOR, fg=TEXT_COLOR).pack(pady=10)
+
+        tk.Label(self.root, text="Username", bg=BG_COLOR, fg=TEXT_COLOR).pack(pady=(5, 0))
+        self.login_user = tk.Entry(self.root, fg="black")
+        self.login_user.pack(pady=(0, 10))
+
+        tk.Label(self.root, text="Password", bg=BG_COLOR, fg=TEXT_COLOR).pack(pady=(5, 0))
+        self.login_pass = tk.Entry(self.root, show="*", fg="black")
+        self.login_pass.pack(pady=(0, 10))
+
+        self.login_pass_visible = False
+        self.login_eye_button = tk.Button(self.root, text="👁", command=self.toggle_login_password, bg=BUTTON_COLOR, fg="white")
+        self.login_eye_button.pack(pady=(5, 10))
+
+        tk.Button(self.root, text="Login", command=self.login_user_func, bg=BUTTON_COLOR, fg="white").pack(pady=5)
+        tk.Button(self.root, text="Clear All", command=self.clear_login_fields, bg=BUTTON_COLOR, fg="white").pack(pady=5)
+        tk.Button(self.root, text="Back", command=self.init_main_screen, bg=BUTTON_COLOR, fg="white").pack(pady=10)
+
+    def toggle_login_password(self):
+        self.login_pass_visible = not self.login_pass_visible
+        show = "" if self.login_pass_visible else "*"
+        self.login_pass.config(show=show)
+        self.login_eye_button.config(text="🙈" if self.login_pass_visible else "👁")
+
+    def clear_login_fields(self):
+        self.login_user.delete(0, tk.END)
+        self.login_pass.delete(0, tk.END)
+
+    def login_user_func(self):
+        user = self.login_user.get()
+        pwd = hash_password(self.login_pass.get())
+
+        cursor.execute("SELECT id FROM Users WHERE username = %s AND password = %s", (user, pwd))
+        result = cursor.fetchone()
+        if result:
+            self.user_id = result[0]
+            self.show_portfolio(user)
+        else:
+            messagebox.showerror("Error", "Invalid username or password.")
+
+    def show_portfolio(self, username):
+        self.clear_screen()
+        tk.Label(self.root, text=f"Welcome, {username}", font=("Arial", 25), bg=BG_COLOR, fg=HEADER_COLOR).pack(pady=10)
+
+        buttons = [
+            ("Objective", lambda: open_field_editor(self.root, self.user_id, "Objective")),
+            ("Contact Details", lambda: open_field_editor(self.root, self.user_id, "Contact")),
+            ("Skills", lambda: open_skills_editor(self.root, self.user_id)),
+            ("Projects", lambda: open_projects_editor(self.root, self.user_id)),
+            ("Achievements", lambda: open_achievements_editor(self.root, self.user_id)),
+            ("Show Progress", lambda: show_progress(self.root, self.user_id))
+        ]
+
+        for label, command in buttons:
+            tk.Button(self.root, text=label, width=30, command=command, bg=BUTTON_COLOR, fg="white").pack(pady=5)
+
+        tk.Button(self.root, text="Logout", command=self.init_main_screen, bg=BUTTON_COLOR, fg="white").pack(pady=10)
+
+# -------------------- Main Program Entry ---------------------
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = LoginApp(root)
+    root.configure(bg=BG_COLOR)
