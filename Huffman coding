@@ -1,0 +1,135 @@
+import tkinter as tk
+from tkinter import messagebox, scrolledtext, ttk
+from collections import Counter
+
+# ----------------------------
+# HuffmanNode Definition
+# ----------------------------
+class HuffmanNode:
+    def __init__(self, char=None, freq=0):
+        self.char = char
+        self.freq = freq
+        self.left = None
+        self.right = None
+
+    def __lt__(self, other):
+        return self.freq < other.freq
+
+# ----------------------------
+# Huffman Compression Logic
+# ----------------------------
+def build_frequency_table(text):
+    return Counter(text)
+
+def build_huffman_tree(freq_table):
+    nodes = [HuffmanNode(char, freq) for char, freq in freq_table.items()]
+    while len(nodes) > 1:
+        nodes.sort(key=lambda x: x.freq)
+        node1 = nodes.pop(0)
+        node2 = nodes.pop(0)
+        merged = HuffmanNode(freq=node1.freq + node2.freq)
+        merged.left = node1
+        merged.right = node2
+        nodes.append(merged)
+    return nodes[0]
+
+def build_codes(node, prefix="", codebook=None):
+    if codebook is None:
+        codebook = {}
+    if node:
+        if node.char is not None:
+            codebook[node.char] = prefix
+        build_codes(node.left, prefix + "0", codebook)
+        build_codes(node.right, prefix + "1", codebook)
+    return codebook
+
+def compress(text, codebook):
+    return ''.join(codebook[char] for char in text)
+
+def huffman_compress(text):
+    freq_table = build_frequency_table(text)
+    root = build_huffman_tree(freq_table)
+    codebook = build_codes(root)
+    encoded = compress(text, codebook)
+    return encoded, codebook
+
+# ----------------------------
+# GUI Logic
+# ----------------------------
+def compress_text():
+    text = input_text.get("1.0", tk.END).strip()
+    if not text:
+        messagebox.showwarning("Input Error", "Please enter some text to compress.")
+        return
+
+    encoded, codebook = huffman_compress(text)
+
+    # Show encoded binary
+    output_text.delete("1.0", tk.END)
+    output_text.insert(tk.END, encoded)
+
+    # Clear existing table
+    for i in codebook_table.get_children():
+        codebook_table.delete(i)
+
+    # Insert new codebook entries
+    for char, code in codebook.items():
+        display_char = repr(char)[1:-1]  # shows '\n' or '\t' etc. nicely
+        codebook_table.insert("", "end", values=(display_char, code))
+
+# ----------------------------
+# GUI Setup
+# ----------------------------
+window = tk.Tk()
+window.title("🌈 Huffman Text Compressor")
+window.geometry("900x700")
+window.configure(bg="#f4f9ff")
+
+HEADER_FONT = ("Helvetica", 18, "bold")
+LABEL_FONT = ("Arial", 12, "bold")
+
+# Title
+tk.Label(window, text="📦 Huffman Text Compression", font=HEADER_FONT,
+         bg="#2f4f75", fg="white", pady=12).pack(fill=tk.X)
+
+# Input Section
+tk.Label(window, text="Enter Text to Compress:", font=LABEL_FONT, bg="#f4f9ff").pack(anchor="w", padx=20, pady=(10, 0))
+input_text = scrolledtext.ScrolledText(window, wrap=tk.WORD, width=100, height=6, font=("Arial", 10),
+                                       bg="#ffffff", fg="#333333", bd=2, relief=tk.GROOVE)
+input_text.pack(padx=20, pady=5)
+
+# Compress Button
+compress_btn = tk.Button(window, text="🚀 Compress", command=compress_text,
+                         font=("Arial", 12, "bold"), bg="#28a745", fg="white", padx=10, pady=6)
+compress_btn.pack(pady=10)
+
+# Output Section
+tk.Label(window, text="🔒 Compressed Binary Output:", font=LABEL_FONT, bg="#f4f9ff").pack(anchor="w", padx=20, pady=(10, 0))
+output_text = scrolledtext.ScrolledText(window, wrap=tk.WORD, width=100, height=6, font=("Courier", 10),
+                                        bg="#fefefe", fg="#111111", bd=2, relief=tk.SUNKEN)
+output_text.pack(padx=20, pady=5)
+
+# Codebook Table Label
+tk.Label(window, text="📘 Huffman Codebook (Character → Binary Code):", font=LABEL_FONT, bg="#f4f9ff").pack(anchor="w", padx=20, pady=(10, 0))
+
+# Table
+columns = ("Character", "Code")
+codebook_table = ttk.Treeview(window, columns=columns, show="headings", height=12)
+codebook_table.heading("Character", text="Character")
+codebook_table.heading("Code", text="Huffman Code")
+codebook_table.column("Character", width=100, anchor="center")
+codebook_table.column("Code", width=700, anchor="w")
+codebook_table.pack(padx=20, pady=10)
+
+# Style
+style = ttk.Style()
+style.theme_use("clam")
+style.configure("Treeview", font=("Courier", 10), rowheight=25, background="white", fieldbackground="white")
+style.configure("Treeview.Heading", font=("Arial", 11, "bold"))
+
+# Footer
+tk.Label(window, text="©️ 2025 Huffman Compressor", font=("Arial", 9, "italic"),
+         bg="#f4f9ff", fg="#666666").pack(pady=10)
+
+# Run
+window.mainloop()
